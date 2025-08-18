@@ -42,6 +42,8 @@
     #foldersEnabled = false;
     #folderAnimCache = new Map();
 
+    #animationCount = 0;
+
     init() {
       this.#foldersEnabled = !gZenWorkspaces.privateWindowOrDisabled;
 
@@ -79,6 +81,13 @@
           return;
         }
         this.#lastFolderContextMenu = folder;
+
+        const newSubfolderItem = document.getElementById('context_zenFolderNewSubfolder');
+        newSubfolderItem.setAttribute(
+          'disabled',
+          folder.level >= ZEN_MAX_SUBFOLDERS - 1 ? 'true' : 'false'
+        );
+
         const changeFolderSpace = document
           .getElementById('context_zenChangeFolderSpace')
           .querySelector('menupopup');
@@ -375,11 +384,14 @@
           {
             marginTop: [0, -(heightUntilSelected + 4 * !selectedItem)],
           },
-          { duration: 0.15, ease: 'easeInOut' }
+          { duration: 0.1, ease: 'easeInOut' }
         )
       );
+      this.#animationCount += 1;
       await Promise.all(animations);
-      if (!selectedItem) tabsContainer.setAttribute('hidden', true);
+      // Prevent hiding if we spam the group animations
+      this.#animationCount -= 1;
+      if (!selectedItem && !this.#animationCount) tabsContainer.setAttribute('hidden', true);
     }
 
     async #onTabGroupExpand(event) {
@@ -466,21 +478,33 @@
 
       animations.push(...this.updateFolderIcon(group));
       animations.push(
-        gZenUIManager.motion.animate(
-          groupStart,
-          {
-            marginTop: 0,
-          },
-          {
-            duration: 0.15,
-            ease: 'linear',
-          }
-        )
+        gZenUIManager.motion
+          .animate(
+            groupStart,
+            {
+              marginTop: 0,
+            },
+            {
+              duration: 0.1,
+              ease: 'linear',
+            }
+          )
+          .then(() => {
+            tabsContainer.style.overflow = '';
+          })
       );
+      this.#animationCount += 1;
       await Promise.all(animations);
-      tabsContainer.style.overflow = '';
-      groupItems.map((item) => {
+      this.#animationCount -= 1;
+      if (this.#animationCount) {
+        return;
+      }
+      groupItems.forEach((item) => {
         // Cleanup just in case
+        item.style.opacity = '';
+        item.style.height = '';
+      });
+      itemsToHide.forEach((item) => {
         item.style.opacity = '';
         item.style.height = '';
       });
@@ -1014,7 +1038,7 @@
       let itemHeight = 0;
       for (const item of group.allItems) {
         itemHeight += item.getBoundingClientRect().height;
-        if (item.hasAttribute('folder-active')) {
+        if (item.hasAttribute('folder-active') && !item.selected) {
           item.removeAttribute('folder-active');
           if (!onlyIfActive) {
             item.setAttribute('was-folder-active', 'true');
